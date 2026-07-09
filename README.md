@@ -13,7 +13,7 @@ graph TD
     Ingress -->|Route| Service[ClusterIP / NodePort Service]
     Service -->|Load Balance| Pods[AI Inference Pods 2-10 Replicas]
     
-    subgraph Kubernetes Cluster (ap-south-1)
+    subgraph kubernetes_cluster ["Kubernetes Cluster (ap-south-1)"]
         direction TB
         Ingress
         Service
@@ -21,13 +21,13 @@ graph TD
         HPA[Horizontal Pod Autoscaler] -->|Monitor CPU & Scale| Pods
         MetricsServer[Metrics Server] -->|Provide Metrics| HPA
         
-        subgraph Monitoring Namespace
+        subgraph monitoring_namespace ["Monitoring Namespace"]
             Prometheus[Prometheus Server] -->|Scrape metrics /metrics| Pods
             Grafana[Grafana Dashboard] -->|Query Metrics| Prometheus
         end
     end
     
-    subgraph ECR Registry
+    subgraph ecr_registry ["ECR Registry"]
         Image[(Docker Image)] -->|Pull| Pods
     end
 ```
