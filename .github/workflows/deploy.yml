@@ -1,0 +1,68 @@
+name: Build and Deploy to EKS
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ai-inference-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build ECR image (runs train.py inside the container automatically)
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest app/
+          
+          # Push both SHA and latest tags
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update Kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ap-south-1 --name ai-platform-eks
+
+      - name: Deploy Kubernetes Manifests
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ai-inference-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Apply Namespace configuration first
+          kubectl apply -f kubernetes/namespace.yaml
+          
+          # Replace placeholder image with dynamic build tag
+          sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ai-inference-app:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" kubernetes/deployment.yaml
+          
+          # Deploy deployment, service, ingress, and HPA configurations
+          kubectl apply -f kubernetes/deployment.yaml
+          kubectl apply -f kubernetes/service.yaml
+          kubectl apply -f kubernetes/ingress.yaml
+          kubectl apply -f kubernetes/hpa.yaml
+
+      - name: Verify Deployment Rollout
+        run: |
+          kubectl rollout status deployment/ai-inference-deployment -n ai-app --timeout=180s

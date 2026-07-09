@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-app
+  labels:
+    environment: production
+    app: ai-inference
